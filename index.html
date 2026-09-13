@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Undangan Pernikahan 3D — The Journey of Two Lights, terinspirasi dari Sky: Children of the Light">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+    }
+  }
+  </script>
+  <title>Undangan Pernikahan ✦ The Journey of Two Lights</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ═══ GAME CANVAS ═══════════════════════════════════════════ -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ═══ UI OVERLAY ════════════════════════════════════════════ -->
+  <div id="ui">
+
+    <!-- TITLE SCREEN -->
+    <div id="title-screen">
+      <div class="title-bg"></div>
+      <div class="title-content">
+        <div class="title-star-ornament">✦ ✦ ✦</div>
+        <p class="title-eyebrow">Sky: The Journey</p>
+        <h1 class="title-main">of Two Lights</h1>
+        <div class="title-divider">── ✦ ──</div>
+        <p class="title-sub">Sebuah Undangan Pernikahan</p>
+        <button id="start-btn" class="btn-start">
+          <span class="btn-start-inner">✦ &nbsp; Mulai Perjalanan &nbsp; ✦</span>
+        </button>
+        <p class="title-hint">Kumpulkan semua 🕯️ untuk membuka portal ke realm berikutnya</p>
+        <p class="title-controls">WASD Gerak &nbsp;·&nbsp; Space Terbang &nbsp;·&nbsp; Mode 3D ✨</p>
+      </div>
+    </div>
+
+    <!-- HUD (visible during gameplay) -->
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="hud-left">
+          <div class="hud-candles" id="hud-candles">
+            <span class="candle-icon">🕯️</span>
+            <span id="candle-count">0</span><span class="candle-sep">/</span><span id="candle-total">0</span>
+          </div>
+          <div class="hud-countdown" id="countdown-display"></div>
+        </div>
+        <div class="hud-center">
+          <div class="hud-realm-name" id="realm-name">Padang Kupu-Kupu</div>
+        </div>
+        <div class="hud-right">
+          <div class="hud-wing-wrap">
+            <span class="wing-icon">🦋</span>
+            <div class="wing-track"><div id="wing-bar" class="wing-fill"></div></div>
+          </div>
+          <button id="audio-btn" class="btn-audio" title="Toggle Music">🎵</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- REALM TITLE FLASH -->
+    <div id="realm-title-display" class="hidden">
+      <div class="realm-title-name"></div>
+      <div class="realm-title-sub"></div>
+    </div>
+
+    <!-- DIALOG BOX -->
+    <div id="dialog-box" class="hidden">
+      <div class="dialog-backdrop"></div>
+      <div class="dialog-inner">
+        <div class="dialog-glow-ring"></div>
+        <div class="dialog-header">
+          <div id="dialog-title" class="dialog-title"></div>
+        </div>
+        <div id="dialog-body" class="dialog-body"></div>
+        <button id="dialog-close" class="btn-dialog">✦ &nbsp; Lanjutkan &nbsp; ✦</button>
+        <p class="dialog-hint">Tekan Space atau klik untuk melanjutkan</p>
+      </div>
+    </div>
+
+    <!-- RSVP MODAL -->
+    <div id="rsvp-modal" class="hidden">
+      <div class="rsvp-backdrop"></div>
+      <div class="rsvp-inner">
+        <div class="rsvp-header">
+          <div class="rsvp-ornament">✦</div>
+          <h2>Konfirmasi Kehadiran</h2>
+          <p>Perjalananmu ke pernikahan kami</p>
+        </div>
+        <form id="rsvp-form">
+          <div class="form-group">
+            <label for="rsvp-name">Nama Lengkap</label>
+            <input type="text" id="rsvp-name" required placeholder="Masukkan nama Anda…">
+          </div>
+          <div class="form-group">
+            <label for="rsvp-phone">Nomor WhatsApp</label>
+            <input type="tel" id="rsvp-phone" placeholder="08xx-xxxx-xxxx">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="rsvp-attend">Kehadiran</label>
+              <select id="rsvp-attend">
+                <option value="hadir">✅ Insya Allah hadir</option>
+                <option value="tidak">❌ Mohon maaf, tidak bisa</option>
+                <option value="mungkin">🤔 Masih belum pasti</option>
+              </select>
+            </div>
+            <div class="form-group form-group-sm">
+              <label for="rsvp-guests">Jml. Tamu</label>
+              <input type="number" id="rsvp-guests" min="1" max="10" value="1">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="rsvp-message">Pesan & Doa 💌</label>
+            <textarea id="rsvp-message" rows="3" placeholder="Ucapan dan doa untuk pengantin…"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="button" id="rsvp-cancel" class="btn-secondary">Kembali</button>
+            <button type="submit" class="btn-primary">✦ Kirim via WhatsApp ✦</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- END SCREEN -->
+    <div id="end-screen" class="hidden">
+      <div class="end-content">
+        <div class="end-ornament">✦</div>
+        <h1 id="end-names" class="end-names"></h1>
+        <div class="end-divider">── ✦ ──</div>
+        <p id="end-date" class="end-date"></p>
+        <p class="end-message">
+          Terima kasih telah menemani perjalanan kami.<br>
+          Doa dan kehadiranmu adalah cahaya terindah.
+        </p>
+        <div class="end-actions">
+          <button id="share-btn" class="btn-share">📱 &nbsp; Bagikan via WhatsApp</button>
+          <button id="replay-btn" class="btn-replay">✦ &nbsp; Mainkan Ulang</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOBILE CONTROLS -->
+    <div id="mobile-controls">
+      <div id="joystick-base" class="joystick-base">
+        <div id="joystick-handle" class="joystick-handle"></div>
+      </div>
+      <div class="mobile-right-btns">
+        <button id="fly-btn" class="fly-btn" aria-label="Terbang">🦋</button>
+      </div>
+    </div>
+
+  </div><!-- /#ui -->
+
+  <script src="js/config.js?v=prairie3"></script>
+  <script src="js/audio.js?v=prairie3"></script>
+  <script type="module" src="js/game3d.js?v=prairie3"></script>
+</body>
+</html>
