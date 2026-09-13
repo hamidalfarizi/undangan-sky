@@ -268,105 +268,298 @@ class Character {
     this.moveSpd = 0;
     this.lastSafe = new THREE.Vector3(0, 3, 5);
 
-    /* Robe — elegant warm cream robe with golden hem */
-    const pts = [
-      new THREE.Vector2(0.64, 0.02),
-      new THREE.Vector2(0.60, 0.28),
-      new THREE.Vector2(0.52, 0.72),
-      new THREE.Vector2(0.38, 1.20),
-      new THREE.Vector2(0.24, 1.58),
-      new THREE.Vector2(0.16, 1.78)
-    ];
-    const robeMat = new THREE.MeshStandardMaterial({
-      color: 0xfdfaf0,
-      emissive: 0xffe280,
-      emissiveIntensity: 0.15,
-      roughness: 0.82,
-      metalness: 0.05
+    /* ─── PBR MATERIALS FOR SKY CHILD ─── */
+    const clothMat = new THREE.MeshStandardMaterial({
+      color: 0xfbf8ee,
+      emissive: 0xffe288,
+      emissiveIntensity: 0.12,
+      roughness: 0.78,
+      metalness: 0.04
     });
-    this.robe = new THREE.Mesh(new THREE.LatheGeometry(pts, 18), robeMat);
-    this.robe.castShadow = true;
-    this.group.add(this.robe);
 
-    /* Golden border hem */
-    const hemMat = new THREE.MeshStandardMaterial({
-      color: 0xffd700,
-      emissive: 0xffaa00,
-      emissiveIntensity: 0.5,
-      roughness: 0.35,
-      metalness: 0.6
-    });
-    const hem = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 8, 24), hemMat);
-    hem.rotation.x = Math.PI / 2;
-    hem.position.y = 0.05;
-    this.group.add(hem);
-
-    /* Shoulder dome */
-    const sh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.24, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.45),
-      robeMat
-    );
-    sh.scale.y = 0.65;
-    sh.position.y = 1.76;
-    sh.castShadow = true;
-    this.group.add(sh);
-
-    /* Head / Mask */
-    const headM = new THREE.MeshStandardMaterial({
+    const maskMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      emissive: 0xfff4d5,
-      emissiveIntensity: 0.5,
+      roughness: 0.38,
+      metalness: 0.06
+    });
+
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xffd700,
+      emissive: 0xaa7000,
+      emissiveIntensity: 0.45,
+      metalness: 0.85,
+      roughness: 0.24
+    });
+
+    const leatherMat = new THREE.MeshStandardMaterial({
+      color: 0x5a3922,
+      roughness: 0.65,
+      metalness: 0.1
+    });
+
+    const hairMat = new THREE.MeshStandardMaterial({
+      color: 0xfff6cf,
+      emissive: 0xffd038,
+      emissiveIntensity: 0.9,
       roughness: 0.55
     });
-    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 12), headM);
-    this.head.position.y = 2.12;
-    this.head.castShadow = true;
-    this.group.add(this.head);
 
-    /* Radiant Hair tuft / Crown */
-    const hairM = new THREE.MeshStandardMaterial({
-      color: 0xfff4c2,
-      emissive: 0xffd038,
-      emissiveIntensity: 2.0,
-      roughness: 0.4
-    });
-    this.hair = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), hairM);
-    this.hair.position.y = 2.42;
-    this.group.add(this.hair);
-
-    /* Cape (Prairie Amber / Warm Golden Cape with diamond star) */
-    const capeGeo = new THREE.PlaneGeometry(1.05, 1.35, 5, 8);
     const capeMat = new THREE.MeshStandardMaterial({
-      color: 0xf5eed8,
+      color: 0xf7eed4,
       emissive: 0xffbc30,
-      emissiveIntensity: 0.22,
+      emissiveIntensity: 0.28,
       side: THREE.DoubleSide,
-      roughness: 0.78
+      roughness: 0.72
     });
-    this.cape = new THREE.Mesh(capeGeo, capeMat);
-    this.cape.position.set(0, 0.98, -0.26);
-    this.cape.castShadow = true;
-    this.group.add(this.cape);
 
-    /* Diamond star on cape back */
-    const starMat = new THREE.MeshBasicMaterial({ color: 0xfff6cf });
-    const starG = new THREE.Mesh(new THREE.OctahedronGeometry(0.11), starMat);
-    starG.scale.set(1, 1.4, 0.2);
-    starG.position.set(0, 1.25, -0.31);
-    this.group.add(starG);
+    /* ─── ARTICULATED BODY HIERARCHY ─── */
+    this.body = new THREE.Group();
+    this.group.add(this.body);
 
-    /* Soft Angelic Halo & Lights */
-    this.halo = mkGlow('#ffe878', 3.5, 0.25);
-    this.halo.position.y = 1.8;
+    /* 1. Torso & Tunic */
+    this.torso = new THREE.Group();
+    this.body.add(this.torso);
+
+    // Upper tunic chest
+    const chest = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.27, 0.58, 14), clothMat);
+    chest.position.y = 1.18;
+    chest.castShadow = true; chest.receiveShadow = true;
+    this.torso.add(chest);
+
+    // Flared lower tunic skirt
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.44, 0.46, 14), clothMat);
+    skirt.position.y = 0.74;
+    skirt.castShadow = true; skirt.receiveShadow = true;
+    this.torso.add(skirt);
+
+    // Golden hem along bottom of tunic skirt
+    const skirtHem = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.024, 8, 20), goldMat);
+    skirtHem.rotation.x = Math.PI / 2;
+    skirtHem.position.y = 0.52;
+    this.torso.add(skirtHem);
+
+    // Adventurer Leather Belt with Golden Buckle
+    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.09, 16), leatherMat);
+    belt.position.y = 0.92;
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.05), goldMat);
+    buckle.position.set(0, 0.92, 0.28);
+    this.torso.add(belt, buckle);
+
+    // Folded Cowl / Neck Collar
+    const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.065, 8, 16), clothMat);
+    cowl.rotation.x = Math.PI / 2;
+    cowl.position.y = 1.45;
+    this.torso.add(cowl);
+
+    /* 2. Head, Ceramic Mask & Glowing Eyes */
+    this.headGroup = new THREE.Group();
+    this.headGroup.position.set(0, 1.48, 0);
+    this.body.add(this.headGroup);
+
+    // Head sphere base
+    const headBase = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 14), clothMat);
+    headBase.position.y = 0.24;
+    headBase.castShadow = true;
+    this.headGroup.add(headBase);
+
+    // Contoured ceramic mask
+    const mask = new THREE.Mesh(
+      new THREE.SphereGeometry(0.255, 16, 12, 0, Math.PI, 0, Math.PI * 0.78),
+      maskMat
+    );
+    mask.rotation.y = -Math.PI / 2;
+    mask.rotation.x = 0.08;
+    mask.position.set(0, 0.23, 0.02);
+    mask.castShadow = true;
+    this.headGroup.add(mask);
+
+    // Almond Glowing Eyes (Iconic Sky child gaze)
+    const eyeGeo = new THREE.SphereGeometry(0.045, 8, 6);
+    eyeGeo.scale(1.3, 0.8, 0.4);
+
+    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeL.position.set(0.085, 0.24, 0.23);
+    eyeL.rotation.z = -0.15;
+
+    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeR.position.set(-0.085, 0.24, 0.23);
+    eyeR.rotation.z = 0.15;
+    this.headGroup.add(eyeL, eyeR);
+
+    // Forehead Diamond Star
+    const headStar = new THREE.Mesh(new THREE.OctahedronGeometry(0.045), goldMat);
+    headStar.scale.set(1, 1.4, 0.25);
+    headStar.position.set(0, 0.38, 0.24);
+    this.headGroup.add(headStar);
+
+    // Feathery Layered Hair Locks (swept back with wind)
+    this.hairCrown = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), hairMat);
+    this.hairCrown.position.set(0, 0.44, -0.04);
+    this.hairCrown.scale.set(1, 0.8, 1.2);
+    this.headGroup.add(this.hairCrown);
+
+    this.hairLocks = [];
+    const lockCoords = [
+      { p: [0, 0.4, -0.22], r: [0.5, 0, 0], s: [1, 1.4, 1] },
+      { p: [0.12, 0.36, -0.18], r: [0.4, 0.2, -0.2], s: [0.85, 1.2, 0.85] },
+      { p: [-0.12, 0.36, -0.18], r: [0.4, -0.2, 0.2], s: [0.85, 1.2, 0.85] }
+    ];
+    lockCoords.forEach(({ p, r, s }) => {
+      const lock = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.5, 6), hairMat);
+      lock.position.set(...p);
+      lock.rotation.set(...r);
+      lock.scale.set(...s);
+      this.headGroup.add(lock);
+      this.hairLocks.push(lock);
+    });
+
+    /* 3. Articulated Arms */
+    // Left Arm
+    this.leftArm = new THREE.Group();
+    this.leftArm.position.set(0.36, 1.26, 0);
+    const armLUpper = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.38, 8), clothMat);
+    armLUpper.position.y = -0.19;
+    armLUpper.castShadow = true;
+    const handL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), clothMat);
+    handL.position.y = -0.4;
+    this.leftArm.add(armLUpper, handL);
+    this.body.add(this.leftArm);
+
+    // Right Arm (holds a miniature brass spirit candle)
+    this.rightArm = new THREE.Group();
+    this.rightArm.position.set(-0.36, 1.26, 0);
+    const armRUpper = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.38, 8), clothMat);
+    armRUpper.position.y = -0.19;
+    armRUpper.castShadow = true;
+    const handR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), clothMat);
+    handR.position.y = -0.4;
+
+    // Little brass candle & flame in hand
+    const handCandle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.18, 8), goldMat);
+    handCandle.position.set(0, -0.38, 0.12);
+    const handFlame = new THREE.Mesh(
+      new THREE.SphereGeometry(0.04, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffc830 })
+    );
+    handFlame.scale.y = 1.6;
+    handFlame.position.set(0, -0.27, 0.12);
+    this.rightArm.add(armRUpper, handR, handCandle, handFlame);
+    this.body.add(this.rightArm);
+
+    /* 4. Articulated Legs & Traveler Boots */
+    // Left Leg
+    this.leftLeg = new THREE.Group();
+    this.leftLeg.position.set(0.16, 0.65, 0);
+    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.09, 0.38, 8), clothMat);
+    legL.position.y = -0.19;
+    legL.castShadow = true;
+    // Leather boot
+    const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.28), leatherMat);
+    bootL.position.set(0, -0.42, 0.04);
+    bootL.castShadow = true;
+    this.leftLeg.add(legL, bootL);
+    this.body.add(this.leftLeg);
+
+    // Right Leg
+    this.rightLeg = new THREE.Group();
+    this.rightLeg.position.set(-0.16, 0.65, 0);
+    const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.09, 0.38, 8), clothMat);
+    legR.position.y = -0.19;
+    legR.castShadow = true;
+    // Leather boot
+    const bootR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.28), leatherMat);
+    bootR.position.set(0, -0.42, 0.04);
+    bootR.castShadow = true;
+    this.rightLeg.add(legR, bootR);
+    this.body.add(this.rightLeg);
+
+    /* 5. Articulated Winged Light Cape */
+    this.capeGroup = new THREE.Group();
+    this.capeGroup.position.set(0, 1.28, -0.06);
+    this.body.add(this.capeGroup);
+
+    // Shoulder cowl / mantle
+    const cowlMantle = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.4),
+      capeMat
+    );
+    cowlMantle.scale.set(1.05, 0.55, 0.85);
+    cowlMantle.position.set(0, 0.1, 0);
+    cowlMantle.castShadow = true;
+    this.capeGroup.add(cowlMantle);
+
+    // Helper: Authentic Scalloped Sky COTL Cape Wing Shape
+    const makeScallopedWingShape = (isLeft) => {
+      const s = new THREE.Shape();
+      const dir = isLeft ? 1 : -1;
+      s.moveTo(0, 0);
+      s.quadraticCurveTo(dir * 0.35, 0.05, dir * 0.65, -0.15);
+      s.quadraticCurveTo(dir * 0.86, -0.55, dir * 0.78, -0.85);
+      // Scallop tip 1 (outer feather)
+      s.lineTo(dir * 0.82, -0.92);
+      s.lineTo(dir * 0.62, -0.98);
+      // Scallop tip 2 (center diamond feather)
+      s.lineTo(dir * 0.52, -1.24);
+      s.lineTo(dir * 0.35, -1.08);
+      // Scallop tip 3 (inner feather)
+      s.lineTo(dir * 0.22, -1.18);
+      s.lineTo(dir * 0.08, -0.95);
+      s.quadraticCurveTo(dir * 0.02, -0.4, 0, 0);
+      return s;
+    };
+
+    // Left Wing (authentic scalloped diamond tips)
+    this.leftWing = new THREE.Group();
+    this.leftWing.position.set(0.08, 0, -0.08);
+    const wingLGeo = new THREE.ShapeGeometry(makeScallopedWingShape(true), 14);
+    this.wingLMesh = new THREE.Mesh(wingLGeo, capeMat);
+    this.wingLMesh.castShadow = true;
+    this.leftWing.add(this.wingLMesh);
+
+    // Golden embroidered scalloped border
+    const borderLGeo = new THREE.EdgesGeometry(wingLGeo);
+    const borderL = new THREE.LineSegments(borderLGeo, new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 2 }));
+    this.wingLMesh.add(borderL);
+    this.capeGroup.add(this.leftWing);
+
+    // Right Wing
+    this.rightWing = new THREE.Group();
+    this.rightWing.position.set(-0.08, 0, -0.08);
+    const wingRGeo = new THREE.ShapeGeometry(makeScallopedWingShape(false), 14);
+    this.wingRMesh = new THREE.Mesh(wingRGeo, capeMat);
+    this.wingRMesh.castShadow = true;
+    this.rightWing.add(this.wingRMesh);
+
+    const borderRGeo = new THREE.EdgesGeometry(wingRGeo);
+    const borderR = new THREE.LineSegments(borderRGeo, new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 2 }));
+    this.wingRMesh.add(borderR);
+    this.capeGroup.add(this.rightWing);
+
+    // Diamond Star Wedges on Cape Back (Winged Light level indicator!)
+    const starMat = new THREE.MeshBasicMaterial({ color: 0xfff8d8 });
+    this.stars = [];
+    for (let s = 0; s < 4; s++) {
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.065), starMat);
+      star.scale.set(1, 1.35, 0.22);
+      star.position.set(0, -0.15 - s * 0.18, -0.22);
+      this.capeGroup.add(star);
+      this.stars.push(star);
+    }
+
+    /* 6. Soft Angelic Halos & Dynamic Atmosphere */
+    this.halo = mkGlow('#ffe878', 3.2, 0.24);
+    this.halo.position.y = 1.75;
     this.group.add(this.halo);
 
-    this.headG = mkGlow('#ffffff', 1.8, 0.38);
+    this.headG = mkGlow('#ffffff', 1.6, 0.35);
     this.headG.position.y = 2.3;
     this.group.add(this.headG);
 
-    /* Soft player point light */
-    this.pLight = new THREE.PointLight(0xffe890, 0.85, 12);
-    this.pLight.position.y = 1.8;
+    // Warm spirit candle point light in hand
+    this.pLight = new THREE.PointLight(0xffdf80, 0.85, 12);
+    this.pLight.position.set(-0.35, 1.1, 0.15);
     this.group.add(this.pLight);
   }
 
@@ -386,10 +579,11 @@ class Character {
     const ml = mv.length();
     if (ml > 0.01) {
       mv.normalize();
-      this.targetRY = -Math.atan2(mv.x, mv.z);
-      this.group.rotation.y = lerpAngle(this.group.rotation.y, this.targetRY, 0.16);
+      // Facing heading: Math.atan2(mv.x, mv.z) aligns directly with travel direction!
+      this.targetRY = Math.atan2(mv.x, mv.z);
+      this.group.rotation.y = lerpAngle(this.group.rotation.y, this.targetRY, 0.18);
     }
-    this.moveSpd = lerp(this.moveSpd, ml > 0.05 ? 1 : 0, 0.2);
+    this.moveSpd = lerp(this.moveSpd, ml > 0.05 ? 1 : 0, 0.22);
     this.velocity.x = lerp(this.velocity.x, mv.x * PHY.SPEED, PHY.ACCEL);
     this.velocity.z = lerp(this.velocity.z, mv.z * PHY.SPEED, PHY.ACCEL);
 
@@ -438,40 +632,113 @@ class Character {
     }
     if (this.onGround) this.lastSafe.copy(this.group.position);
 
-    /* ── Animations ── */
+    /* ── SKELETAL LOCOMOTION & WING ANIMATIONS ── */
     this.capeT += 0.07;
     this.haloT += 0.04;
-    if (this.onGround && ml > 0.08) this.stepT += 0.25;
-    this._animCape();
+
+    const spd = Math.hypot(this.velocity.x, this.velocity.z);
+
+    if (this.onGround && ml > 0.05) {
+      // ✦ RUNNING / WALKING CYCLE
+      this.stepT += this.moveSpd * 0.35;
+
+      // Dynamic leg strides
+      const legStride = Math.sin(this.stepT) * 0.68;
+      this.leftLeg.rotation.x = legStride;
+      this.rightLeg.rotation.x = -legStride;
+
+      // Dynamic counter arm swing
+      const armSwing = Math.sin(this.stepT) * 0.52;
+      this.leftArm.rotation.x = -armSwing;
+      this.rightArm.rotation.x = armSwing;
+      this.leftArm.rotation.z = 0.12;
+      this.rightArm.rotation.z = -0.12;
+
+      // Hip sway & vertical body bounce
+      this.body.position.y = Math.abs(Math.sin(this.stepT * 2)) * 0.07;
+      this.body.rotation.z = Math.sin(this.stepT) * 0.04;
+      this.body.rotation.x = lerp(this.body.rotation.x, 0.12, 0.15);
+
+      // Cape drapes naturally behind and sways with wind
+      this.leftWing.rotation.z = lerp(this.leftWing.rotation.z, 0.14, 0.18);
+      this.rightWing.rotation.z = lerp(this.rightWing.rotation.z, -0.14, 0.18);
+      this.leftWing.rotation.x = lerp(this.leftWing.rotation.x, -0.22 - spd * 0.5, 0.18);
+      this.rightWing.rotation.x = lerp(this.rightWing.rotation.x, -0.22 - spd * 0.5, 0.18);
+    } else if (!this.onGround) {
+      // ✦ JUMPING & GLIDING / FLYING FLIGHT CYCLE
+      const flap = Math.sin(this.capeT * 14) * 0.24;
+
+      // Wings unfold into wide majestic gliding pose
+      this.leftWing.rotation.z = lerp(this.leftWing.rotation.z, 1.2 + flap, 0.22);
+      this.rightWing.rotation.z = lerp(this.rightWing.rotation.z, -1.2 - flap, 0.22);
+      this.leftWing.rotation.x = lerp(this.leftWing.rotation.x, 0.25, 0.2);
+      this.rightWing.rotation.x = lerp(this.rightWing.rotation.x, 0.25, 0.2);
+
+      // Arms spread like eagle glider wings
+      this.leftArm.rotation.z = lerp(this.leftArm.rotation.z, 1.15, 0.2);
+      this.rightArm.rotation.z = lerp(this.rightArm.rotation.z, -1.15, 0.2);
+      this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0.1, 0.2);
+      this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, 0.1, 0.2);
+
+      // Legs tuck backward aerodynamically
+      this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0.65, 0.18);
+      this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0.65, 0.18);
+
+      // Body pitches forward in flight
+      this.body.position.y = lerp(this.body.position.y, 0, 0.15);
+      this.body.rotation.x = lerp(this.body.rotation.x, 0.42, 0.15);
+      this.body.rotation.z = lerp(this.body.rotation.z, 0, 0.15);
+    } else {
+      // ✦ IDLE BREATHING CYCLE
+      this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0, 0.18);
+      this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0, 0.18);
+      this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0, 0.18);
+      this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, 0, 0.18);
+      this.leftArm.rotation.z = 0.1;
+      this.rightArm.rotation.z = -0.1;
+
+      const breath = Math.sin(this.haloT * 2.0) * 0.015;
+      this.body.position.y = breath;
+      this.body.rotation.x = lerp(this.body.rotation.x, 0, 0.15);
+      this.body.rotation.z = lerp(this.body.rotation.z, 0, 0.15);
+
+      this.leftWing.rotation.z = lerp(this.leftWing.rotation.z, 0.08, 0.15);
+      this.rightWing.rotation.z = lerp(this.rightWing.rotation.z, -0.08, 0.15);
+      this.leftWing.rotation.x = lerp(this.leftWing.rotation.x, -0.15, 0.15);
+      this.rightWing.rotation.x = lerp(this.rightWing.rotation.x, -0.15, 0.15);
+    }
+
+    // Hair locks gentle wind sway
+    this.hairLocks.forEach((l, i) => {
+      l.rotation.x = 0.45 + Math.sin(this.capeT * 3.5 + i) * 0.1 + (spd * 0.3);
+    });
+
+    // Cape wing mesh vertex ripples
+    this._animWingCloth(this.wingLMesh, true);
+    this._animWingCloth(this.wingRMesh, false);
+
     this._animGlow();
   }
 
-  _animCape() {
-    const pos = this.cape.geometry.attributes.position;
+  _animWingCloth(mesh, isLeft) {
+    const pos = mesh.geometry.attributes.position;
     const t = this.capeT;
     const spd = Math.hypot(this.velocity.x, this.velocity.z);
-    for (let r = 1; r <= 8; r++) {
-      const rf = r / 8;
-      for (let c = 0; c < 5; c++) {
-        const i = r * 5 + c;
-        if (i >= pos.count) continue;
-        const cf = c / 4;
-        const w1 = Math.sin(t * 3.6 + rf * Math.PI * 1.4) * 0.12 * rf;
-        const w2 = Math.sin(t * 5.2 + cf * Math.PI + rf * 2.0) * 0.06 * rf;
-        const bow = (this.flying ? rf * 0.44 : 0) + (spd * 0.38 * rf);
-        pos.setZ(i, w1 + w2 + bow);
-      }
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      const rf = Math.abs(y) / 1.2;
+      const ripple = Math.sin(t * 5.0 + rf * 3.0) * 0.05 * rf;
+      const bow = (this.flying ? 0.18 * rf : 0) + (spd * 0.25 * rf);
+      pos.setZ(i, ripple + bow);
     }
     pos.needsUpdate = true;
   }
 
   _animGlow() {
     const p = 0.92 + Math.sin(this.haloT * 1.6) * 0.08;
-    this.halo.scale.setScalar(3.5 * p);
-    this.halo.material.opacity = 0.24 + Math.sin(this.haloT) * 0.06;
+    this.halo.scale.setScalar(3.2 * p);
+    this.halo.material.opacity = 0.22 + Math.sin(this.haloT) * 0.05;
     this.pLight.intensity = 0.85 + Math.sin(this.haloT * 2.4) * 0.15;
-    this.head.position.y = 2.12 + Math.sin(this.stepT) * 0.05;
-    this.group.rotation.x = lerp(this.group.rotation.x, this.flying ? -0.22 : 0, 0.12);
   }
 
   collectFx(wpos, scene, hex) {
