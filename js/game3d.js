@@ -268,6 +268,16 @@ class Character {
     this.moveSpd = 0;
     this.lastSafe = new THREE.Vector3(0, 3, 5);
 
+    /* Flight Kinematics & Flap Aerodynamics (Jitter-Free Blending) */
+    this.flapPhase = 0;
+    this.strokeBurstDone = false;
+    this.bankAngle = 0;
+    this.prevWingZ = 0;
+    this.wingAngularVel = 0;
+    this.airWeight = 0;
+    this.flyWeight = 0;
+    this.energyLockout = false;
+
     /* ─── PBR MATERIALS FOR SKY CHILD ─── */
     const clothMat = new THREE.MeshStandardMaterial({
       color: 0xfbf8ee,
@@ -520,8 +530,8 @@ class Character {
 
     // Golden embroidered scalloped border
     const borderLGeo = new THREE.EdgesGeometry(wingLGeo);
-    const borderL = new THREE.LineSegments(borderLGeo, new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 2 }));
-    this.wingLMesh.add(borderL);
+    this.borderL = new THREE.LineSegments(borderLGeo, new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 2 }));
+    this.wingLMesh.add(this.borderL);
     this.capeGroup.add(this.leftWing);
 
     // Right Wing
@@ -533,8 +543,8 @@ class Character {
     this.rightWing.add(this.wingRMesh);
 
     const borderRGeo = new THREE.EdgesGeometry(wingRGeo);
-    const borderR = new THREE.LineSegments(borderRGeo, new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 2 }));
-    this.wingRMesh.add(borderR);
+    this.borderR = new THREE.LineSegments(borderRGeo, new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 2 }));
+    this.wingRMesh.add(this.borderR);
     this.capeGroup.add(this.rightWing);
 
     // Diamond Star Wedges on Cape Back (Winged Light level indicator!)
@@ -591,12 +601,22 @@ class Character {
     if (inp.jumpPressed && this.onGround) {
       this.velocity.y = PHY.JUMP;
       inp.jumpPressed = false;
+      this.onGround = false;
+      this.airWeight = 0.6; // Immediately begin unfolding wings smoothly
+      this.flapPhase = 0;
+      this.strokeBurstDone = false;
       audioManager?.playFly?.();
     }
 
-    /* ── Fly / Wing Energy ── */
-    const fly = (inp.jump || inp.flyHeld) && this.wingEnergy > 0 && !this.onGround;
-    if (fly) {
+    /* ── Fly / Wing Energy (with lockout hysteresis to eliminate 60Hz chatter) ── */
+    if (this.wingEnergy <= 0) {
+      this.energyLockout = true;
+    } else if (this.wingEnergy >= 20 || this.onGround) {
+      this.energyLockout = false;
+    }
+
+    const wantsFly = (inp.jump || inp.flyHeld) && !this.energyLockout && this.wingEnergy > 0 && !this.onGround;
+    if (wantsFly) {
       this.velocity.y = Math.min(this.velocity.y + PHY.FLY, 0.35);
       this.wingEnergy = Math.max(0, this.wingEnergy - PHY.W_DRAIN);
       this.flying = true;
@@ -611,14 +631,19 @@ class Character {
     this.velocity.x = clamp(this.velocity.x, -PHY.SPEED * 1.8, PHY.SPEED * 1.8);
     this.velocity.z = clamp(this.velocity.z, -PHY.SPEED * 1.8, PHY.SPEED * 1.8);
 
+    const prevOnGround = this.onGround;
     this.group.position.add(this.velocity);
     this.group.position.x = clamp(this.group.position.x, -16, 16);
     this.group.position.z = Math.max(this.group.position.z, -2);
 
-    /* ── Ground Collision ── */
+    /* ── Ground Collision & Anti-Chatter Snapping ── */
     const gy = gY(this.group.position.x, this.group.position.z, realmId);
     const minY = gy + 1.05;
-    if (this.group.position.y <= minY) {
+
+    // Ground snapping: if character was on the ground and moving on slopes, snap to ground (up to 0.38)
+    // so slope steps NEVER cause onGround true/false toggle chatter!
+    const snapThreshold = (prevOnGround && this.velocity.y <= 0.01) ? 0.38 : 0;
+    if (this.group.position.y <= minY + snapThreshold) {
       this.group.position.y = minY;
       if (this.velocity.y < 0) this.velocity.y = 0;
       this.onGround = true;
@@ -632,106 +657,225 @@ class Character {
     }
     if (this.onGround) this.lastSafe.copy(this.group.position);
 
-    /* ── SKELETAL LOCOMOTION & WING ANIMATIONS ── */
+    /* ── SMOOTH WEIGHTS (Prevents ANY sudden state twitching) ── */
+    // airWeight: 0 on ground, 1 in air
+    this.airWeight = lerp(this.airWeight, this.onGround ? 0 : 1, 0.16);
+    // flyWeight: 0 gliding/soaring, 1 active flapping
+    this.flyWeight = lerp(this.flyWeight, (this.flying && !this.onGround) ? 1 : 0, 0.16);
+
+    /* ── SKELETAL LOCOMOTION & REALISTIC WING ANIMATIONS ── */
     this.capeT += 0.07;
     this.haloT += 0.04;
 
     const spd = Math.hypot(this.velocity.x, this.velocity.z);
 
-    if (this.onGround && ml > 0.05) {
-      // ✦ RUNNING / WALKING CYCLE
-      this.stepT += this.moveSpd * 0.35;
+    // ─── 1. POSE TARGETS: GROUND (IDLE vs RUN) ───
+    const groundLz = lerp(0.08, 0.14, this.moveSpd);
+    const groundRz = -groundLz;
+    const groundPitchX = lerp(-0.15, -0.22 - spd * 0.45, this.moveSpd);
+    const groundSweepY = 0;
 
-      // Dynamic leg strides
-      const legStride = Math.sin(this.stepT) * 0.68;
-      this.leftLeg.rotation.x = legStride;
-      this.rightLeg.rotation.x = -legStride;
+    // Running leg strides and arm swing (gradually suppressed when airWeight increases)
+    this.stepT += this.moveSpd * 0.35;
+    const legStride = Math.sin(this.stepT) * 0.68 * (1 - this.airWeight);
+    const armSwing = Math.sin(this.stepT) * 0.52 * (1 - this.airWeight);
 
-      // Dynamic counter arm swing
-      const armSwing = Math.sin(this.stepT) * 0.52;
-      this.leftArm.rotation.x = -armSwing;
-      this.rightArm.rotation.x = armSwing;
-      this.leftArm.rotation.z = 0.12;
-      this.rightArm.rotation.z = -0.12;
+    // ─── 2. POSE TARGETS: GLIDING / SOARING IN AIR ───
+    const glideBaseZ = 1.20;
+    const thermal = Math.sin(this.capeT * 2.5) * 0.04;
 
-      // Hip sway & vertical body bounce
-      this.body.position.y = Math.abs(Math.sin(this.stepT * 2)) * 0.07;
-      this.body.rotation.z = Math.sin(this.stepT) * 0.04;
-      this.body.rotation.x = lerp(this.body.rotation.x, 0.12, 0.15);
-
-      // Cape drapes naturally behind and sways with wind
-      this.leftWing.rotation.z = lerp(this.leftWing.rotation.z, 0.14, 0.18);
-      this.rightWing.rotation.z = lerp(this.rightWing.rotation.z, -0.14, 0.18);
-      this.leftWing.rotation.x = lerp(this.leftWing.rotation.x, -0.22 - spd * 0.5, 0.18);
-      this.rightWing.rotation.x = lerp(this.rightWing.rotation.x, -0.22 - spd * 0.5, 0.18);
-    } else if (!this.onGround) {
-      // ✦ JUMPING & GLIDING / FLYING FLIGHT CYCLE
-      const flap = Math.sin(this.capeT * 14) * 0.24;
-
-      // Wings unfold into wide majestic gliding pose
-      this.leftWing.rotation.z = lerp(this.leftWing.rotation.z, 1.2 + flap, 0.22);
-      this.rightWing.rotation.z = lerp(this.rightWing.rotation.z, -1.2 - flap, 0.22);
-      this.leftWing.rotation.x = lerp(this.leftWing.rotation.x, 0.25, 0.2);
-      this.rightWing.rotation.x = lerp(this.rightWing.rotation.x, 0.25, 0.2);
-
-      // Arms spread like eagle glider wings
-      this.leftArm.rotation.z = lerp(this.leftArm.rotation.z, 1.15, 0.2);
-      this.rightArm.rotation.z = lerp(this.rightArm.rotation.z, -1.15, 0.2);
-      this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0.1, 0.2);
-      this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, 0.1, 0.2);
-
-      // Legs tuck backward aerodynamically
-      this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0.65, 0.18);
-      this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0.65, 0.18);
-
-      // Body pitches forward in flight
-      this.body.position.y = lerp(this.body.position.y, 0, 0.15);
-      this.body.rotation.x = lerp(this.body.rotation.x, 0.42, 0.15);
-      this.body.rotation.z = lerp(this.body.rotation.z, 0, 0.15);
-    } else {
-      // ✦ IDLE BREATHING CYCLE
-      this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0, 0.18);
-      this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0, 0.18);
-      this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0, 0.18);
-      this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, 0, 0.18);
-      this.leftArm.rotation.z = 0.1;
-      this.rightArm.rotation.z = -0.1;
-
-      const breath = Math.sin(this.haloT * 2.0) * 0.015;
-      this.body.position.y = breath;
-      this.body.rotation.x = lerp(this.body.rotation.x, 0, 0.15);
-      this.body.rotation.z = lerp(this.body.rotation.z, 0, 0.15);
-
-      this.leftWing.rotation.z = lerp(this.leftWing.rotation.z, 0.08, 0.15);
-      this.rightWing.rotation.z = lerp(this.rightWing.rotation.z, -0.08, 0.15);
-      this.leftWing.rotation.x = lerp(this.leftWing.rotation.x, -0.15, 0.15);
-      this.rightWing.rotation.x = lerp(this.rightWing.rotation.x, -0.15, 0.15);
+    // Dynamic Banking into Turns (A/D or Joystick lateral steer)
+    let targetBank = 0;
+    if (inp.left) targetBank = -0.36;
+    if (inp.right) targetBank = 0.36;
+    if (inp.joystick && Math.abs(inp.joystick.x) > 0.1) {
+      targetBank = clamp(-inp.joystick.x * 0.45, -0.4, 0.4);
     }
+    // Fade bank to 0 when on ground
+    this.bankAngle = lerp(this.bankAngle, this.onGround ? 0 : targetBank, 0.14);
+
+    const dive = clamp(-this.velocity.y * 2.2, 0, 1);
+    const glidePitchX = 0.22 + dive * 0.26;
+    const glideSweepY = -dive * 0.28;
+
+    const glideLz = glideBaseZ + thermal - this.bankAngle * 0.55;
+    const glideRz = -glideBaseZ - thermal - this.bankAngle * 0.55;
+
+    // ─── 3. POSE TARGETS: ACTIVE BIOMECHANICAL WING FLAP ───
+    let flapLz = glideLz, flapRz = glideRz, flapPitchX = glidePitchX, flapSweepY = glideSweepY;
+    let flapLift = 0;
+
+    if (this.flying || this.flyWeight > 0.05) {
+      this.flapPhase += 0.115;
+      const cycle = this.flapPhase % (Math.PI * 2);
+      const downstrokeDuration = 2.387; // ~38% of cycle is powerful downstroke
+
+      if (cycle < downstrokeDuration) {
+        // Power Downstroke
+        const u = cycle / downstrokeDuration;
+        const strokeProg = (1 - Math.cos(u * Math.PI)) * 0.5;
+        const targetWingZ = lerp(1.52, 0.34, strokeProg);
+        flapLz = targetWingZ;
+        flapRz = -targetWingZ;
+        flapPitchX = lerp(0.12, 0.40, strokeProg);
+        flapSweepY = lerp(0.04, 0.26, strokeProg);
+        flapLift = Math.sin(u * Math.PI) * 0.12;
+
+        if (u > 0.65 && !this.strokeBurstDone && this.flying) {
+          this._spawnWingtipSparkles();
+          this.strokeBurstDone = true;
+        }
+      } else {
+        // Recovery Upstroke
+        this.strokeBurstDone = false;
+        const v = (cycle - downstrokeDuration) / (Math.PI * 2 - downstrokeDuration);
+        const recoverProg = (1 - Math.cos(v * Math.PI)) * 0.5;
+        const targetWingZ = lerp(0.34, 1.52, recoverProg);
+        flapLz = targetWingZ;
+        flapRz = -targetWingZ;
+        flapPitchX = lerp(0.40, -0.14, recoverProg);
+        flapSweepY = lerp(0.26, -0.06, recoverProg);
+        flapLift = 0;
+      }
+    } else {
+      this.strokeBurstDone = false;
+    }
+
+    // ─── 4. BLEND IN-AIR (Glide vs Flap) ───
+    const airLz = lerp(glideLz, flapLz, this.flyWeight);
+    const airRz = lerp(glideRz, flapRz, this.flyWeight);
+    const airPitchX = lerp(glidePitchX, flapPitchX, this.flyWeight);
+    const airSweepY = lerp(glideSweepY, flapSweepY, this.flyWeight);
+
+    // ─── 5. FINAL BLEND (Ground vs Air) — 100% JITTER-FREE ───
+    const finalLz = lerp(groundLz, airLz, this.airWeight);
+    const finalRz = lerp(groundRz, airRz, this.airWeight);
+    const finalPitchX = lerp(groundPitchX, airPitchX, this.airWeight);
+    const finalSweepY = lerp(groundSweepY, airSweepY, this.airWeight);
+
+    // Apply wing rotations smoothly
+    this.leftWing.rotation.z = lerp(this.leftWing.rotation.z, finalLz, 0.22);
+    this.rightWing.rotation.z = lerp(this.rightWing.rotation.z, finalRz, 0.22);
+    this.leftWing.rotation.x = lerp(this.leftWing.rotation.x, finalPitchX, 0.20);
+    this.rightWing.rotation.x = lerp(this.rightWing.rotation.x, finalPitchX, 0.20);
+    this.leftWing.rotation.y = lerp(this.leftWing.rotation.y, finalSweepY, 0.20);
+    this.rightWing.rotation.y = lerp(this.rightWing.rotation.y, -finalSweepY, 0.20);
+
+    // Synchronized arms
+    const armAirLz = finalLz * 0.82;
+    const armAirRz = finalRz * 0.82;
+    const armAirX = finalPitchX * 0.75;
+    this.leftArm.rotation.z = lerp(0.12, armAirLz, this.airWeight);
+    this.rightArm.rotation.z = lerp(-0.12, armAirRz, this.airWeight);
+    this.leftArm.rotation.x = lerp(-armSwing, armAirX, this.airWeight);
+    this.rightArm.rotation.x = lerp(armSwing, armAirX, this.airWeight);
+
+    // Legs (walking stride on ground, streamlined back in air)
+    const legAirX = lerp(0.55 + dive * 0.25, 0.62, this.flyWeight);
+    this.leftLeg.rotation.x = lerp(legStride, legAirX, this.airWeight);
+    this.rightLeg.rotation.x = lerp(-legStride, legAirX, this.airWeight);
+
+    // Body posture: bounce on ground, bank & pitch in air
+    const groundBodyY = Math.abs(Math.sin(this.stepT * 2)) * 0.07 * this.moveSpd;
+    const airBodyY = lerp(thermal * 0.5, flapLift, this.flyWeight);
+    this.body.position.y = lerp(groundBodyY, airBodyY, this.airWeight);
+
+    const groundBodyPitch = lerp(0, 0.12, this.moveSpd);
+    const airBodyPitch = lerp(0.24 + dive * 0.26, 0.22, this.flyWeight);
+    this.body.rotation.x = lerp(groundBodyPitch, airBodyPitch, this.airWeight);
+
+    this.body.rotation.z = lerp(Math.sin(this.stepT) * 0.04 * this.moveSpd, this.bankAngle, this.airWeight);
+    this.group.rotation.z = lerp(this.group.rotation.z, this.bankAngle * 0.35 * this.airWeight, 0.14);
+
+    // Measure angular velocity with a low-pass filter to prevent vertex drag spikes
+    const currentWingZ = this.leftWing.rotation.z;
+    const rawVel = currentWingZ - this.prevWingZ;
+    this.wingAngularVel = lerp(this.wingAngularVel, clamp(rawVel, -0.15, 0.15), 0.18);
+    this.prevWingZ = currentWingZ;
 
     // Hair locks gentle wind sway
     this.hairLocks.forEach((l, i) => {
-      l.rotation.x = 0.45 + Math.sin(this.capeT * 3.5 + i) * 0.1 + (spd * 0.3);
+      l.rotation.x = 0.45 + Math.sin(this.capeT * 3.5 + i) * 0.08 + (spd * 0.25);
     });
 
-    // Cape wing mesh vertex ripples
-    this._animWingCloth(this.wingLMesh, true);
-    this._animWingCloth(this.wingRMesh, false);
+    // Cape wing mesh & golden border aeroelastic simulation (calm on ground, organic in air)
+    this._animWingCloth(this.wingLMesh, this.borderL, true);
+    this._animWingCloth(this.wingRMesh, this.borderR, false);
 
     this._animGlow();
   }
 
-  _animWingCloth(mesh, isLeft) {
-    const pos = mesh.geometry.attributes.position;
+  _animWingCloth(mesh, borderMesh, isLeft) {
     const t = this.capeT;
     const spd = Math.hypot(this.velocity.x, this.velocity.z);
-    for (let i = 0; i < pos.count; i++) {
-      const y = pos.getY(i);
-      const rf = Math.abs(y) / 1.2;
-      const ripple = Math.sin(t * 5.0 + rf * 3.0) * 0.05 * rf;
-      const bow = (this.flying ? 0.18 * rf : 0) + (spd * 0.25 * rf);
-      pos.setZ(i, ripple + bow);
+    // Aeroelastic angular drag clamped smoothly
+    const aeroDrag = clamp(-this.wingAngularVel * 0.35, -0.06, 0.06);
+
+    const deform = (pos) => {
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const rf = Math.min(1.0, Math.abs(y) / 1.25);
+        const xf = Math.min(1.0, Math.abs(x) / 0.85);
+
+        // 1. Aeroelastic stroke flex: when flapping down, tips bend upward; when flapping up, tips trail downward
+        const flapFlex = aeroDrag * Math.pow(rf, 1.8) * this.airWeight;
+
+        // 2. Airspeed drag pushing cloth backward
+        const airBow = (spd * 0.22 + (this.flying ? 0.14 : 0.02)) * Math.pow(rf, 1.4);
+
+        // 3. Fluid silk undulation wave (calm when idle, gentle ripple when moving/flying)
+        const waveAmp = (this.airWeight > 0.1 ? (0.015 + spd * 0.025) : (this.moveSpd * 0.02 + 0.005));
+        const wave = Math.sin(t * 3.2 - rf * 3.5 + xf * 1.5) * waveAmp * rf;
+
+        pos.setZ(i, flapFlex + airBow + wave);
+      }
+      pos.needsUpdate = true;
+    };
+
+    if (mesh && mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position) {
+      deform(mesh.geometry.attributes.position);
     }
-    pos.needsUpdate = true;
+    if (borderMesh && borderMesh.geometry && borderMesh.geometry.attributes && borderMesh.geometry.attributes.position) {
+      deform(borderMesh.geometry.attributes.position);
+    }
+  }
+
+  _spawnWingtipSparkles() {
+    if (!this.scene) return;
+    const tips = [
+      new THREE.Vector3(0.55, -1.2, 0),
+      new THREE.Vector3(-0.55, -1.2, 0)
+    ];
+    const wings = [this.wingLMesh, this.wingRMesh];
+    tips.forEach((localTip, i) => {
+      if (!wings[i]) return;
+      const worldPos = localTip.clone().applyMatrix4(wings[i].matrixWorld);
+      for (let k = 0; k < 2; k++) {
+        const sp = mkGlow('#ffd700', rand(0.35, 0.7), rand(0.5, 0.85));
+        sp.position.copy(worldPos).add(new THREE.Vector3(rand(-0.08, 0.08), rand(-0.05, 0.05), rand(-0.08, 0.08)));
+        this.scene.add(sp);
+        const vx = rand(-0.02, 0.02) + this.velocity.x * 0.2;
+        const vy = rand(-0.01, 0.02);
+        const vz = rand(-0.02, 0.02) + this.velocity.z * 0.2;
+        let op = sp.material.opacity;
+        const fade = () => {
+          sp.position.x += vx;
+          sp.position.y += vy;
+          sp.position.z += vz;
+          op -= 0.035;
+          sp.material.opacity = op;
+          if (op > 0) {
+            requestAnimationFrame(fade);
+          } else {
+            this.scene.remove(sp);
+            sp.geometry?.dispose?.();
+            sp.material?.dispose?.();
+          }
+        };
+        requestAnimationFrame(fade);
+      }
+    });
   }
 
   _animGlow() {
@@ -739,6 +883,16 @@ class Character {
     this.halo.scale.setScalar(3.2 * p);
     this.halo.material.opacity = 0.22 + Math.sin(this.haloT) * 0.05;
     this.pLight.intensity = 0.85 + Math.sin(this.haloT * 2.4) * 0.15;
+
+    // Winged Light Stars pulsation on back
+    if (this.stars && this.stars.length) {
+      const starPulse = this.flying
+        ? 1.0 + Math.sin(this.flapPhase * 2) * 0.35
+        : 0.95 + Math.sin(this.haloT * 1.8) * 0.08;
+      for (let s = 0; s < this.stars.length; s++) {
+        this.stars[s].scale.set(1 * starPulse, 1.35 * starPulse, 0.22 * starPulse);
+      }
+    }
   }
 
   collectFx(wpos, scene, hex) {
